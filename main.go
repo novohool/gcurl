@@ -38,10 +38,10 @@ var (
 )
 
 func init() {
-	flag.Func("host-rules", "Rewrite host and enable SNI spoofing with Chrome TLS fingerprint (e.g., www.v2ex.com=baidu.com)", func(s string) error {
+	flag.Func("host-rules", "Rewrite host and enable SNI spoofing with Chrome TLS fingerprint (e.g., www.google.com=v.com)", func(s string) error {
 		parts := strings.SplitN(s, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid format for --host-rules, example: gcurl -k -I --host-rules=www.v2ex.com=baidu.com --host-resolver-rules=baidu.com=172.67.35.211 https://www.v2ex.com")
+			return fmt.Errorf("invalid format for --host-rules, example: gcurl -k -I --host-rules=www.google.com=v.com --host-resolver-rules=v.com=172.67.35.211 https://www.google.com")
 		}
 		hostRules[parts[0]] = parts[1]
 		return nil
@@ -472,7 +472,7 @@ func main() {
 		fmt.Println("\nExamples:")
 		fmt.Println("  gcurl https://www.example.com")
 		fmt.Println("  gcurl -k -I https://www.example.com")
-		fmt.Println("  gcurl -v --host-rules=www.v2ex.com=baidu.com --host-resolver-rules=baidu.com=172.67.35.211 https://www.v2ex.com")
+		fmt.Println("  gcurl -v --host-rules=www.google.com=v.com --host-resolver-rules=v.com=172.67.35.211 https://www.google.com")
 		return
 	}
 
