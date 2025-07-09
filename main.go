@@ -519,15 +519,15 @@ func main() {
 		req.Method = "HEAD"
 	}
 	// 伪造 SNI 时同步伪造 HTTP Host 头
-	// if enableSNIRewrite {
-	// 	originalHost := req.URL.Hostname()
-	// 	if fakeName, ok := hostRules[originalHost]; ok {
-	// 		req.Host = fakeName
-	// 		if port := req.URL.Port(); port != "" {
-	// 			req.Host = fakeName + ":" + port
-	// 		}
-	// 	}
-	// }
+	//if enableSNIRewrite {
+	//	originalHost := req.URL.Hostname()
+	//	if fakeName, ok := hostRules[originalHost]; ok {
+	//		req.Host = fakeName
+	//		if port := req.URL.Port(); port != "" {
+	//			req.Host = fakeName + ":" + port
+	//		}
+	//	}
+	//}
 
 	if *verbose {
 		// Create a custom connection to inspect raw response
@@ -556,7 +556,14 @@ func main() {
 		} else {
 			defer uConn.Close()
 			// Send a simple HTTP request manually
-			rawRequest := fmt.Sprintf("%s %s HTTP/1.1\r\nHost: %s\r\n\r\n", req.Method, req.URL.Path, req.Host)
+			rawRequest := fmt.Sprintf(
+				"%s %s HTTP/1.1\r\n"+
+					"Host: %s\r\n"+
+					"User-Agent: gcurl/1.0\r\n"+
+					"Accept: */*\r\n"+
+					"Connection: close\r\n"+
+					"Accept-Encoding: identity\r\n\r\n",
+				req.Method, req.URL.RequestURI(), req.Host)
 			_, err = uConn.Write([]byte(rawRequest))
 			if err != nil {
 				log.Printf("[VERBOSE] Failed to send raw request: %v", err)
