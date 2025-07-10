@@ -15,9 +15,15 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
+	"net/url"
+
+	"encoding/base64"
+
+	"github.com/miekg/dns"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -54,7 +60,7 @@ func init() {
 		hostResolver[parts[0]] = parts[1]
 		return nil
 	})
-	flag.Func("resolve", "Force resolve HOST:PORT:ADDR", func(s string) error {
+	flag.Func("resolve", "Force resolve HOST:PORT:ADDR (like curl --resolve, can be specified multiple times)", func(s string) error {
 		parts := strings.Split(s, ":")
 		if len(parts) < 3 {
 			return fmt.Errorf("invalid format for --resolve, expected HOST:PORT:ADDR")
@@ -164,35 +170,105 @@ func customDial(network, addr string, serverName string, snRewrite bool, fakeNam
 }
 
 // getClientHelloID determines the TLS fingerprint based on host-rules
-func getClientHelloID() utls.ClientHelloID {
-	if len(hostRules) > 0 {
-		return utls.HelloChrome_Auto // Default to Chrome when host-rules is used
+func getClientHelloID(serverName string, echConfigBytes []byte) utls.ClientHelloID {
+	if len(echConfigBytes) > 0 {
+		return utls.HelloGolang // ECH 成功，使用原生 ClientHello
 	}
-	return utls.HelloGolang // Default for non-spoofed cases
+	if _, ok := hostRules[serverName]; ok {
+		return utls.HelloChrome_Auto // host-rules 时伪造 Chrome fingerprint
+	}
+	return utls.HelloGolang // 默认
+}
+
+// fetchECHConfigBytes queries DNS HTTPS record for ECHConfig using 223.5.5.5 and returns the raw bytes
+func fetchECHConfigBytes(domain string) ([]byte, error) {
+	c := new(dns.Client)
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(domain), dns.TypeHTTPS)
+	r, _, err := c.Exchange(m, "223.5.5.5:53")
+	if err != nil {
+		return nil, err
+	}
+	for _, ans := range r.Answer {
+		if https, ok := ans.(*dns.HTTPS); ok {
+			for _, param := range https.Value {
+				if *verbose {
+					fmt.Printf("[DEBUG] param: %+v, type: %T\n", param, param)
+				}
+				if param.Key() == 5 {
+					var echBytes []byte
+					if v, ok := getFieldBytes(param, "Value"); ok {
+						echBytes = v
+					} else if d, ok := getFieldBytes(param, "Data"); ok {
+						echBytes = d
+					} else if s := param.String(); s != "" {
+						if *verbose {
+							fmt.Printf("[DEBUG] Trying base64 decode of param.String(): %s\n", s)
+						}
+						b64 := s
+						data, err := base64.StdEncoding.DecodeString(b64)
+						if err != nil {
+							data, err = base64.RawURLEncoding.DecodeString(b64)
+						}
+						if err == nil && len(data) > 0 {
+							if *verbose {
+								fmt.Printf("[DEBUG] base64 decode success, len=%d\n", len(data))
+							}
+							echBytes = data
+						}
+					}
+					if len(echBytes) > 0 {
+						if *verbose {
+							// 解析并打印 ECHConfigList 详细内容
+							cfgs, err := utls.UnmarshalECHConfigs(echBytes)
+							if err != nil {
+								fmt.Printf("[VERBOSE] Failed to parse ECHConfigList: %v\n", err)
+							} else {
+								fmt.Printf("[VERBOSE] ECHConfigList contains %d configs:\n", len(cfgs))
+								for i, cfg := range cfgs {
+									fmt.Printf("[VERBOSE]   Config[%d]: %+v\n", i, cfg)
+								}
+							}
+						}
+						return echBytes, nil
+					}
+					if *verbose {
+						fmt.Printf("[DEBUG] ECH param found but no Value/Data field, and base64 decode failed: %+v\n", param)
+					}
+				}
+			}
+		}
+	}
+	return nil, nil // not found
+}
+
+// getFieldBytes 用反射获取字段名为 name 的 []byte 字段
+func getFieldBytes(obj interface{}, name string) ([]byte, bool) {
+	val := reflect.ValueOf(obj)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	field := val.FieldByName(name)
+	if field.IsValid() && field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8 {
+		return field.Bytes(), true
+	}
+	return nil, false
 }
 
 // newUTLSConn creates a TLS connection with verbose logging and fingerprint spoofing
-func newUTLSConn(network, addr string, serverName string, fallback bool) (net.Conn, error) {
-	originalServerName := serverName
-	fakeName, snRewrite := hostRules[serverName]
-	if enableSNIRewrite && snRewrite && !fallback {
-		if *verbose {
-			log.Printf("[VERBOSE] Rewriting SNI: %q -> %q (original: %q)", serverName, fakeName, originalServerName)
-		}
-		serverName = fakeName
-	} else {
-		if *verbose {
-			log.Printf("[VERBOSE] No SNI rewriting applied: using ServerName=%q (fallback=%v)", originalServerName, fallback)
-		}
+func newUTLSConn(network, addr string, serverName string, fallback bool, clientHelloID utls.ClientHelloID, echConfigBytes []byte) (net.Conn, error) {
+	// 移除 SNI 伪造逻辑，只用 main() 传入的 serverName
+	if *verbose {
+		log.Printf("[VERBOSE] Using ServerName=%q (fallback=%v)", serverName, fallback)
 	}
 
-	conn, err := customDial(network, addr, serverName, enableSNIRewrite && snRewrite, fakeName, fallback)
+	conn, err := customDial(network, addr, serverName, false, "", fallback)
 	if err != nil {
 		return nil, err
 	}
 
 	var verifyFunc func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
-	if *generateCert && enableSNIRewrite && snRewrite && !fallback && !*insecure {
+	if *generateCert && !fallback && !*insecure {
 		if certPool == nil {
 			certPool = x509.NewCertPool()
 			var priv *rsa.PrivateKey
@@ -252,20 +328,21 @@ func newUTLSConn(network, addr string, serverName string, fallback bool) (net.Co
 		}
 	}
 
+	// 修正：如果启用 ECH，MinVersion 必须为 TLS1.3
+	var minVersion uint16 = utls.VersionTLS12
+	if len(echConfigBytes) > 0 {
+		minVersion = utls.VersionTLS13
+	}
+
 	config := &utls.Config{
-		InsecureSkipVerify:    *insecure,
-		ServerName:            serverName,
-		MinVersion:            utls.VersionTLS12,
-		MaxVersion:            utls.VersionTLS13,
-		VerifyPeerCertificate: verifyFunc,
+		InsecureSkipVerify:             *insecure,
+		ServerName:                     serverName,
+		MinVersion:                     minVersion,
+		MaxVersion:                     utls.VersionTLS13,
+		VerifyPeerCertificate:          verifyFunc,
+		EncryptedClientHelloConfigList: echConfigBytes,
 	}
 
-	if *verbose {
-		log.Printf("[VERBOSE] TLS Config: ServerName=%s, InsecureSkipVerify=%v, MinVersion=%s, MaxVersion=%s, CustomVerify=%v",
-			serverName, config.InsecureSkipVerify, tlsVersionToString(config.MinVersion), tlsVersionToString(config.MaxVersion), verifyFunc != nil)
-	}
-
-	clientHelloID := getClientHelloID()
 	uConn := utls.UClient(conn, config, clientHelloID)
 	if *verbose {
 		fingerprint := "golang (default)"
@@ -295,11 +372,11 @@ func newUTLSConn(network, addr string, serverName string, fallback bool) (net.Co
 		if *verbose {
 			log.Printf("[VERBOSE] TLS Handshake failed: %v", err)
 		}
-		if enableSNIRewrite && snRewrite && !fallback {
+		if fallback {
 			if *verbose {
-				log.Printf("[VERBOSE] Retrying with original SNI: %s", originalServerName)
+				log.Printf("[VERBOSE] Retrying with original SNI: %s", serverName)
 			}
-			return newUTLSConn(network, addr, originalServerName, true)
+			return newUTLSConn(network, addr, serverName, true, clientHelloID, echConfigBytes)
 		}
 		return nil, fmt.Errorf("TLS handshake failed: %v", err)
 	}
@@ -453,7 +530,32 @@ func newCustomTransport() *http.Transport {
 			if *verbose {
 				log.Printf("[VERBOSE] DialTLSContext: network=%s, addr=%s, host=%s", network, addr, host)
 			}
-			return newUTLSConn(network, addr, host, false)
+			// 先尝试获取 ECHConfig
+			echConfigBytes, _ := fetchECHConfigBytes(host)
+			var clientHelloID utls.ClientHelloID
+			var sniServerName string
+			if len(echConfigBytes) > 0 {
+				clientHelloID = utls.HelloGolang
+				// SNI 直接用 origHost
+				sniServerName = host
+				if *verbose {
+					log.Printf("[VERBOSE] Using ECH for original host %s, not spoofing ClientHello", host)
+				}
+			} else {
+				// fallback: 伪造 SNI 和 ClientHello
+				fakeName, snRewrite := hostRules[host]
+				if snRewrite {
+					clientHelloID = utls.HelloChrome_Auto
+					sniServerName = fakeName
+					if *verbose {
+						log.Printf("[VERBOSE] ECH not found for %s, spoofing ClientHello for %s", host, fakeName)
+					}
+				} else {
+					clientHelloID = utls.HelloGolang
+					sniServerName = host
+				}
+			}
+			return newUTLSConn(network, addr, sniServerName, false, clientHelloID, echConfigBytes)
 		},
 		DisableKeepAlives: true,
 	}
@@ -469,10 +571,11 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println("\nNotes:")
 		fmt.Println("  - Using --host-rules automatically enables SNI spoofing and Chrome TLS fingerprint.")
+		fmt.Println("  - --resolve works like curl: --resolve HOST:PORT:IP can be specified multiple times to force DNS resolution.")
 		fmt.Println("\nExamples:")
 		fmt.Println("  gcurl https://www.example.com")
 		fmt.Println("  gcurl -k -I https://www.example.com")
-		fmt.Println("  gcurl -v --host-rules=www.google.com=v.com --host-resolver-rules=v.com=172.67.35.211 https://www.google.com")
+		fmt.Println("  gcurl -v --host-rules=www.google.com=v.com --host-resolver-rules=v.com=172.67.35.211 --resolve=www.google.com:443:1.2.3.4 https://www.google.com")
 		return
 	}
 
@@ -481,6 +584,46 @@ func main() {
 		log.Fatal("Usage: gcurl [OPTIONS] URL")
 	}
 	requestURL = args[0]
+	// 禁止 http 访问（明文 ClientHello），如果启用 host-rules
+	if len(hostRules) > 0 {
+		parsed, err := url.Parse(requestURL)
+		if err != nil {
+			log.Fatalf("Invalid URL: %v", err)
+		}
+		if parsed.Scheme != "https" {
+			log.Fatalf("HTTP (non-TLS) requests are disabled when --host-rules is set. Refusing to send plaintext ClientHello.")
+		}
+	}
+
+	parsedURL, err := url.Parse(requestURL)
+	if err != nil {
+		log.Fatalf("Invalid URL: %v", err)
+	}
+	origHost := parsedURL.Hostname()
+	echConfigBytes, _ := fetchECHConfigBytes(origHost)
+	var clientHelloID utls.ClientHelloID
+	var sniServerName string
+	if len(echConfigBytes) > 0 {
+		clientHelloID = utls.HelloGolang
+		// SNI 直接用 origHost
+		sniServerName = origHost
+		if *verbose {
+			log.Printf("[VERBOSE] Using ECH for original host %s, not spoofing ClientHello", origHost)
+		}
+	} else {
+		// fallback: 伪造 SNI 和 ClientHello
+		fakeName, snRewrite := hostRules[origHost]
+		if snRewrite {
+			clientHelloID = utls.HelloChrome_Auto
+			sniServerName = fakeName
+			if *verbose {
+				log.Printf("[VERBOSE] ECH not found for %s, spoofing ClientHello for %s", origHost, fakeName)
+			}
+		} else {
+			clientHelloID = utls.HelloGolang
+			sniServerName = origHost
+		}
+	}
 
 	// Automatically enable SNI rewriting if host-rules is provided
 	if len(hostRules) > 0 {
@@ -533,47 +676,43 @@ func main() {
 		// Create a custom connection to inspect raw response
 		// 修正：补全端口并使用伪造 host 逻辑
 		originalHost := req.URL.Hostname()
-		fakeHost := originalHost
 		if enableSNIRewrite {
-			if f, ok := hostRules[originalHost]; ok {
-				fakeHost = f
-			}
-		}
-		port := req.URL.Port()
-		if port == "" {
-			if req.URL.Scheme == "https" {
-				port = "443"
-			} else {
-				port = "80"
-			}
-		}
-		addr := net.JoinHostPort(originalHost, port)
-		// SNI 伪造时，serverName 用 fakeHost
-		uConn, err := newUTLSConn("tcp", addr, fakeHost, false)
-		log.Printf("[VERBOSE] HTTP Request Host header: %s", req.Host)
-		if err != nil {
-			log.Printf("[VERBOSE] Failed to establish TLS connection: %v", err)
-		} else {
-			defer uConn.Close()
-			// Send a simple HTTP request manually
-			rawRequest := fmt.Sprintf(
-				"%s %s HTTP/1.1\r\n"+
-					"Host: %s\r\n"+
-					"User-Agent: gcurl/1.0\r\n"+
-					"Accept: */*\r\n"+
-					"Connection: close\r\n"+
-					"Accept-Encoding: identity\r\n\r\n",
-				req.Method, req.URL.RequestURI(), req.Host)
-			_, err = uConn.Write([]byte(rawRequest))
-			if err != nil {
-				log.Printf("[VERBOSE] Failed to send raw request: %v", err)
-			} else {
-				buf := make([]byte, 1024)
-				n, err := uConn.Read(buf)
-				if err != nil && err != io.EOF {
-					log.Printf("[VERBOSE] Failed to read raw response: %v", err)
+			port := req.URL.Port()
+			if port == "" {
+				if req.URL.Scheme == "https" {
+					port = "443"
 				} else {
-					log.Printf("[VERBOSE] Raw server response: %q", buf[:n])
+					port = "80"
+				}
+			}
+			addr := net.JoinHostPort(originalHost, port)
+			// SNI 伪造时，serverName 用 fakeHost
+			uConn, err := newUTLSConn("tcp", addr, sniServerName, false, clientHelloID, echConfigBytes)
+			log.Printf("[VERBOSE] HTTP Request Host header: %s", req.Host)
+			if err != nil {
+				log.Printf("[VERBOSE] Failed to establish TLS connection: %v", err)
+			} else {
+				defer uConn.Close()
+				// Send a simple HTTP request manually
+				rawRequest := fmt.Sprintf(
+					"%s %s HTTP/1.1\r\n"+
+						"Host: %s\r\n"+
+						"User-Agent: gcurl/1.0\r\n"+
+						"Accept: */*\r\n"+
+						"Connection: close\r\n"+
+						"Accept-Encoding: identity\r\n\r\n",
+					req.Method, req.URL.RequestURI(), req.Host)
+				_, err = uConn.Write([]byte(rawRequest))
+				if err != nil {
+					log.Printf("[VERBOSE] Failed to send raw request: %v", err)
+				} else {
+					buf := make([]byte, 1024)
+					n, err := uConn.Read(buf)
+					if err != nil && err != io.EOF {
+						log.Printf("[VERBOSE] Failed to read raw response: %v", err)
+					} else {
+						log.Printf("[VERBOSE] Raw server response: %q", buf[:n])
+					}
 				}
 			}
 		}
