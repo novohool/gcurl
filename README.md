@@ -1,7 +1,19 @@
 # gcurl
 !! 研究目的,不对能用于其他目的，概不负责
+如果需要获取未污染ip和域名使用以下工具
 
-- curl
+# 安装工具
+> pip install dns-observe
+# 运行工具，观察 dns 结果，找到能用的IP
+> dns-observe v2ex.com
+- Time: 2024-11-25 18:34:13.965648, Name: v2ex.com, TTL: 77, A: 157.240.17.41
+- Time: 2024-11-25 18:34:13.969059, Name: v2ex.com, TTL: 250, A: 108.160.167.148
+┌ Time: 2024-11-25 18:34:14.097316, Name: v2ex.com, TTL: 300, A: 104.20.47.180
+│ Time: 2024-11-25 18:34:14.097316, Name: v2ex.com, TTL: 300, A: 104.20.48.180
+└ Time: 2024-11-25 18:34:14.097316, Name: v2ex.com, TTL: 300, A: 172.67.35.211
+
+和curl使用对比
+- curl访问直接被重置
 ```
 D:\workspace\gcurl>curl -k -I -v  --resolve v2ex.com:443:172.67.35.211  https://v2ex.com  
 * Added v2ex.com:443:172.67.35.211 to DNS cache
@@ -15,7 +27,7 @@ D:\workspace\gcurl>curl -k -I -v  --resolve v2ex.com:443:172.67.35.211  https://
 * closing connection #0
 curl: (35) Recv failure: Connection was reset
 ```
-- gcurl
+- gcurl访问可绕过封禁
 ```
 D:\workspace\gcurl>gcurl -k -I -v  --resolve v2ex.com:443:172.67.35.211  https://v2ex.com   
 [DEBUG] param: h3,h2, type: *dns.SVCBAlpn
