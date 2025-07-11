@@ -82,3 +82,57 @@ Set-Cookie: PB3_SESSION="2|1:0|10:1752140085|11:PB3_SESSION|36:djJleDo1OC4zNC4yM
 Server-Timing: cfL4;desc="?proto=TCP&rtt=229742&min_rtt=229742&rtt_var=114871&sent=7&recv=7&lost=0&retrans=2&sent_bytes=3896&recv_bytes=1773&delivery_rate=1584&cwnd=33&unsent_bytes=0&cid=6c62a3e5b836c62c&ts=1628&x=0"
 
 ```
+
+- 也支持谷歌
+```
+go run main.go -k -I -v --resolve=www.google.com:443:34.49.133.3 https://www.google.com
+[DEBUG] param: h2,h3, type: *dns.SVCBAlpn
+2025/07/10 22:17:58 [VERBOSE] No ECH, using --resolve IP 34.49.133.3 for www.google.com:443, not spoofing ClientHello/SNI
+2025/07/10 22:17:58 [VERBOSE] Starting request: URL=https://www.google.com, HeadOnly=true, Insecure=true, GenerateCert=true, FollowRedirects=false, EnableSNIRewrite=false
+2025/07/10 22:17:58 [VERBOSE] Host Rules: map[]
+2025/07/10 22:17:58 [VERBOSE] Host Resolver Rules: map[]
+2025/07/10 22:17:58 [VERBOSE] Resolve Rules: map[www.google.com:443:34.49.133.3]
+2025/07/10 22:17:58 [VERBOSE] Using ServerName="" (fallback=false)
+2025/07/10 22:17:58 [VERBOSE] No host resolver rule found for serverName: , using original addr=34.49.133.3:443
+2025/07/10 22:17:58 [VERBOSE] Dialing TCP: network=tcp, addr=34.49.133.3:443
+2025/07/10 22:17:58 [VERBOSE] TCP connection established: local=10.66.2.46:58004, remote=34.49.133.3:443
+2025/07/10 22:17:58 [VERBOSE] TLS Client Hello Details (Fingerprint: golang (default)):
+2025/07/10 22:17:58 [VERBOSE]   Cipher Suites: [Not available before handshake]
+2025/07/10 22:17:58 [VERBOSE]   Extensions: [Not available before handshake]
+2025/07/10 22:17:58 [VERBOSE]   Supported Curves: [Not available before handshake]
+2025/07/10 22:17:58 [VERBOSE]   Supported Points: [Not available before handshake]
+2025/07/10 22:17:58 [VERBOSE]   Supported Versions: [TLS1.2 TLS1.3]
+2025/07/10 22:17:58 [VERBOSE]   ServerName=
+2025/07/10 22:17:58 [VERBOSE] TLS Handshake completed: Version=TLS1.3, CipherSuite=TLS_AES_128_GCM_SHA256, ServerName=
+2025/07/10 22:17:58 [VERBOSE] Server Certificate: Subject=CN=*.api.dev.healthdatanexus.ai, Issuer=CN=R3,O=Let's Encrypt,C=US, SANs=[*.api.dev.healthdatanexus.ai]
+2025/07/10 22:17:58 [VERBOSE] HTTP Request Host header: www.google.com
+2025/07/10 22:17:59 [VERBOSE] Raw server response: "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=ISO-8859-1\r\ncontent-security-policy-report-only: object-src 'none';base-uri 'self';script-src 'nonce-MJNFKKf__bsnWf7taNsjyA' 'strict-dynamic' 'report-sample' 'unsafe-eval' 'unsafe-inline' https: http:;report-uri https://csp.withgoogle.com/csp/gws/other-hp\r\naccept-ch: Sec-CH-Prefers-Color-Scheme\r\np3p: CP=\"This is not a P3P policy! See g.co/p3phelp for more info.\"\r\ndate: Thu, 10 Jul 2025 14:17:59 GMT\r\nserver: gws\r\nx-xss-protection: 0\r\nx-frame-options: SAMEORIGIN\r\nexpires: Thu, 10 Jul 2025 14:17:59 GMT\r\ncache-control: private\r\nset-cookie: AEC=AVh_V2jUz8u1aOTbHiYuX2O5eqI_XTu2anE-GYuExPr97IRIYy7DRdVot-E; expires=Tue, 06-Jan-2026 14:17:59 GMT; path=/; domain=.google.com; Secure; HttpOnly; SameSite=lax\r\nset-cookie: NID=525=lo-URnYVjHMYtny2cOmz_fl9QKVA7StHtYr9bSfXfavKpszmAm9N0h8HQSPA0dWpbtsqB9Jhpb9izmwziYBlQtmojtWLuxpVoFlHGoZbEba2epfHgj8aCCWKkDLh0JlG0jb9EIfdMH1x1STh7vuiZ-xYMCWqdxb9_jX13u4ma3o_0WKWFrly5NYYbhcaVKYYt8XrLUrfZveO2e8; expires=Fri, 09-Jan-2026 14:17:59 GMT; "
+2025/07/10 22:17:59 [VERBOSE] DialTLSContext: network=tcp, addr=www.google.com:443, sniServerName=
+2025/07/10 22:17:59 [VERBOSE] Using ServerName="" (fallback=false)
+2025/07/10 22:17:59 [VERBOSE] Applying resolve rule: www.google.com:443 -> 34.49.133.3
+2025/07/10 22:17:59 [VERBOSE] Dialing TCP: network=tcp, addr=34.49.133.3:443
+2025/07/10 22:17:59 [VERBOSE] TCP connection established: local=10.66.2.46:58005, remote=34.49.133.3:443
+2025/07/10 22:17:59 [VERBOSE] TLS Client Hello Details (Fingerprint: golang (default)):
+2025/07/10 22:17:59 [VERBOSE]   Cipher Suites: [Not available before handshake]
+2025/07/10 22:17:59 [VERBOSE]   Extensions: [Not available before handshake]
+2025/07/10 22:17:59 [VERBOSE]   Supported Curves: [Not available before handshake]
+2025/07/10 22:17:59 [VERBOSE]   Supported Points: [Not available before handshake]
+2025/07/10 22:17:59 [VERBOSE]   Supported Versions: [TLS1.2 TLS1.3]
+2025/07/10 22:17:59 [VERBOSE]   ServerName=
+2025/07/10 22:17:59 [VERBOSE] TLS Handshake completed: Version=TLS1.3, CipherSuite=TLS_AES_128_GCM_SHA256, ServerName=
+2025/07/10 22:17:59 [VERBOSE] Server Certificate: Subject=CN=*.api.dev.healthdatanexus.ai, Issuer=CN=R3,O=Let's Encrypt,C=US, SANs=[*.api.dev.healthdatanexus.ai]
+HTTP/1.1 200 200 OK
+X-Xss-Protection: 0
+X-Frame-Options: SAMEORIGIN
+Content-Type: text/html; charset=ISO-8859-1
+Accept-Ch: Sec-CH-Prefers-Color-Scheme
+Cache-Control: private
+Alt-Svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000, h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+Content-Security-Policy-Report-Only: object-src 'none';base-uri 'self';script-src 'nonce-_sw7NIR09G1W7izsGsDZ9A' 'strict-dynamic' 'report-sample' 'unsafe-eval' 'unsafe-inline' https: http:;report-uri https://csp.withgoogle.com/csp/gws/other-hp
+P3p: CP="This is not a P3P policy! See g.co/p3phelp for more info."
+Set-Cookie: AEC=AVh_V2hP-d2to7Jpdl1mH4vSojEme_1pePzL4EXKNmMhmmPJOX1QWzq9pDU; expires=Tue, 06-Jan-2026 14:17:59 GMT; path=/; domain=.google.com; Secure; HttpOnly; SameSite=lax, NID=525=Sx9iMwVSnbOaYbmyjULLElJF-1L54vVBon--IJSmjay3ZuX1o4qNanx6sKDnjNPyEdeSLi8fBoXYho00G7rMBUsZ7iV5uZKC4g0Umnx5_YjFqJ9mhZlkX12rDrkRakePWr3oWwWut-ose3osIbTe3MXGmK5EObLVrz1dv_wkxCjVpWT7PnF6F0XZPMt2NSn2JVDLrJd4AGrV56g; expires=Fri, 09-Jan-2026 14:17:59 GMT; path=/; domain=.google.com; HttpOnly
+Via: 1.1 google
+Date: Thu, 10 Jul 2025 14:17:59 GMT
+Server: gws
+Expires: Thu, 10 Jul 2025 14:17:59 GMT
+```
